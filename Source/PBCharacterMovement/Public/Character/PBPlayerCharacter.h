@@ -108,6 +108,12 @@ public:
 		return bIsSprinting;
 	}
 	UFUNCTION()
+	void SetSprinting(bool Value)
+	{
+		bIsSprinting = Value;
+	};
+
+	UFUNCTION()
 	bool DoesWantToWalk() const
 	{
 		return bWantsToWalk;

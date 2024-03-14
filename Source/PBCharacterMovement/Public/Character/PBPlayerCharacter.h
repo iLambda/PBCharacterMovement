@@ -18,6 +18,13 @@ inline float SimpleSpline(float Value)
 	return (3.0f * ValueSquared - 2.0f * ValueSquared * Value);
 }
 
+UENUM()
+enum EPBPlayerMovementAction {
+	Sprint = 0,
+	Jump = 1,
+	Crouch = 2,
+};
+
 UCLASS(config = Game)
 class PBCHARACTERMOVEMENT_API APBPlayerCharacter : public ACharacter
 {
@@ -94,6 +101,10 @@ private:
 	/** defer the jump stop for a frame (for early jumps) */
 	bool bDeferJumpStop;
 
+	bool bAllowSprint = true;
+	bool bAllowJump = true;
+	bool bAllowCrouch = true;
+
 	virtual void ApplyDamageMomentum(float DamageTaken, FDamageEvent const& DamageEvent, APawn* PawnInstigator, AActor* DamageCauser) override;
 
 protected:
@@ -110,7 +121,7 @@ public:
 	UFUNCTION()
 	void SetSprinting(bool Value)
 	{
-		bIsSprinting = Value;
+		bIsSprinting = bAllowSprint && Value;
 	};
 
 	UFUNCTION()
@@ -182,6 +193,31 @@ public:
 	 */
 	UFUNCTION()
 	void LookUp(bool bIsPure, float Rate);
+
+
+	/**
+	 *	Is doing X movement tech allowed ?
+	 */
+	UFUNCTION()
+	bool IsAllowed(EPBPlayerMovementAction tech) const;
+
+	/**
+	 *	Set the allowed state of a movement tech
+	 */
+	UFUNCTION()
+	void SetAllowed(EPBPlayerMovementAction tech, bool value);
+
+	/**
+	 *	Allow some movement to be done
+	 */
+	UFUNCTION()
+	void Allow(EPBPlayerMovementAction tech);
+
+	/**
+	 *	Disallow some movement to be done
+	 */
+	UFUNCTION()
+	void Disallow(EPBPlayerMovementAction tech);
 
 	virtual bool CanCrouch() const override;
 };

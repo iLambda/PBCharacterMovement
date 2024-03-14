@@ -124,6 +124,10 @@ void APBPlayerCharacter::ClearJumpInput(float DeltaTime)
 
 void APBPlayerCharacter::Jump()
 {
+	if (!bAllowJump) {
+		return;
+	}
+
 	if (GetCharacterMovement()->IsFalling())
 	{
 		bDeferJumpStop = true;
@@ -349,5 +353,67 @@ void APBPlayerCharacter::RecalculateBaseEyeHeight()
 
 bool APBPlayerCharacter::CanCrouch() const
 {
-	return !GetCharacterMovement()->bCheatFlying && Super::CanCrouch() && !MovementPtr->IsOnLadder();
+	return bAllowCrouch && !GetCharacterMovement()->bCheatFlying && Super::CanCrouch() && !MovementPtr->IsOnLadder();
+}
+
+bool APBPlayerCharacter::IsAllowed(EPBPlayerMovementAction tech) const {
+	switch (tech) {
+		case EPBPlayerMovementAction::Sprint: return bAllowSprint;
+		case EPBPlayerMovementAction::Jump: return bAllowJump;
+		case EPBPlayerMovementAction::Crouch: return bAllowCrouch;
+	}
+	return false;
+}
+
+void APBPlayerCharacter::SetAllowed(EPBPlayerMovementAction tech, bool value) {
+	if (value != IsAllowed(tech)) {
+		if (value) {
+			Allow(tech);
+		}
+		else {
+			Disallow(tech);
+		}
+	}
+}
+
+void APBPlayerCharacter::Allow(EPBPlayerMovementAction tech) {
+	switch (tech) {
+		case EPBPlayerMovementAction::Sprint: {
+			bAllowSprint = true;
+			break;
+		}
+		
+		case EPBPlayerMovementAction::Jump: {
+			bAllowJump = true;
+			break;
+		}
+
+		case EPBPlayerMovementAction::Crouch: {
+			bAllowCrouch = true;
+			break;
+		}
+	}
+}
+
+void APBPlayerCharacter::Disallow(EPBPlayerMovementAction tech) {
+	switch (tech) {
+		case EPBPlayerMovementAction::Sprint: {
+			bAllowSprint = false;
+			bIsSprinting = false;
+			break;
+		}
+		
+		case EPBPlayerMovementAction::Jump: {
+			bAllowJump = false;
+			break;
+		}
+
+		case EPBPlayerMovementAction::Crouch: {
+			if (bIsCrouched) {
+				UnCrouch();
+			}
+			bAllowCrouch = false;
+			break;
+		}
+	}
 }

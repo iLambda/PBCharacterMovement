@@ -43,7 +43,7 @@ public:
 	/* Triggered when player's movement mode has changed */
 	void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PrevCustomMode) override;
 
-	float GetLastJumpTime()
+	float GetLastJumpTime() const
 	{
 		return LastJumpTime;
 	}

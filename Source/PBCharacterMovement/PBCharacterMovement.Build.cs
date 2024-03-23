@@ -14,8 +14,9 @@ public class PBCharacterMovement : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
-				"PhysicsCore"
-			}
+				"PhysicsCore",
+                "Chaos"
+            }
 		);
 	}
 }

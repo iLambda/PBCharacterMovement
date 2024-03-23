@@ -221,6 +221,9 @@ public:
 
 	virtual float GetMaxSpeed() const override;
 
+protected:
+	virtual void ApplyDownwardForce(float DeltaSeconds) override;
+
 private:
 	/** Plays sound effect according to movement and surface */
 	void PlayMoveSound(float DeltaTime);

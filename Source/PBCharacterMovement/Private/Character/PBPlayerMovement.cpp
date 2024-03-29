@@ -1845,8 +1845,3 @@ void UPBPlayerMovement::ApplyDownwardForce(float DeltaSeconds)
 		}
 	}
 }
-
-bool UPBPlayerMovement::IsInWater() const
-{
-	return Super::IsInWater();
-}

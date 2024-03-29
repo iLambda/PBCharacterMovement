@@ -225,11 +225,6 @@ public:
 
 	virtual float GetMaxSpeed() const override;
 
-	/** Returns true if the component is considered in water **/
-	virtual bool IsInWater() const override;
-	/** Returns the water level of the component **/
-	//virtual EWaterLevel GetWaterLevel() const;
-
 protected:
 	virtual void ApplyDownwardForce(float DeltaSeconds) override;
 

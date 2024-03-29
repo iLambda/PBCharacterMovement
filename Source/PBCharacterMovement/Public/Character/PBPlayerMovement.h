@@ -139,6 +139,10 @@ protected:
 
 	bool bShouldPlayMoveSounds = true;
 
+	/** The multiplier for acceleration when swimming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Swimming", meta = (DisplayAfter = "Buoyancy"))
+	float FluidAccelerationMultiplier;
+
 public:
 	/** Print pos and vel (Source: cl_showpos) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement (General Settings)")
@@ -202,7 +206,7 @@ public:
 	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode);
 
 	/** Do camera roll effect based on velocity */
-	float GetCameraRoll();
+	float GetCameraRoll() const;
 
 	void SetNoClip(bool bNoClip);
 
@@ -220,6 +224,11 @@ public:
 	}
 
 	virtual float GetMaxSpeed() const override;
+
+	/** Returns true if the component is considered in water **/
+	virtual bool IsInWater() const override;
+	/** Returns the water level of the component **/
+	//virtual EWaterLevel GetWaterLevel() const;
 
 protected:
 	virtual void ApplyDownwardForce(float DeltaSeconds) override;

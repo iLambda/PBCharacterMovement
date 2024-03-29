@@ -270,8 +270,8 @@ void APBPlayerCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfH
 bool APBPlayerCharacter::CanJumpInternal_Implementation() const
 {
 	// UE-COPY: ACharacter::CanJumpInternal_Implementation()
-
-	bool bCanJump = GetCharacterMovement() && GetCharacterMovement()->IsJumpAllowed();
+	auto movement = GetCharacterMovement();
+	bool bCanJump = movement && movement->IsJumpAllowed() && movement->CanAttemptJump();
 
 	if (bCanJump)
 	{

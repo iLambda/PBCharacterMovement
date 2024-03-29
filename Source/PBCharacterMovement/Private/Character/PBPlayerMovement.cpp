@@ -6,6 +6,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/PhysicsVolume.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
@@ -48,6 +49,7 @@ UPBPlayerMovement::UPBPlayerMovement()
 	// Acceleration multipliers (HL2's sv_accelerate and sv_airaccelerate)
 	GroundAccelerationMultiplier = 10.0f;
 	AirAccelerationMultiplier = 10.0f;
+	FluidAccelerationMultiplier = 10.0f;
 	// 30 air speed cap from HL2
 	AirSpeedCap = 57.15f;
 	// HL2 like friction
@@ -452,7 +454,7 @@ void UPBPlayerMovement::OnMovementModeChanged(EMovementMode PreviousMovementMode
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 }
 
-float UPBPlayerMovement::GetCameraRoll()
+float UPBPlayerMovement::GetCameraRoll() const
 {
 	if (RollSpeed == 0.0f || RollAngle == 0.0f)
 	{
@@ -1304,6 +1306,43 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 			Velocity = (Dir * LookVec * PerpendicularAccel.Size2D() + TangentialAccel).GetClampedToSize(NoClipAccelClamp, NoClipAccelClamp);
 		}
 	}
+	// swimming movement
+	else if (IsSwimming()) 
+	{
+		// Apply input acceleration
+		if (!bZeroAcceleration) {
+			// Clamp acceleration to max speed
+			Acceleration = Acceleration.GetClampedToMaxSize(MaxSpeed);
+
+			// Add the view pitch we've lost in the process.
+			// This is similar to manually applying a rotation. 
+			// First, get the view vectors.
+			auto LookVec = CharacterOwner->GetControlRotation().Vector();
+			auto LookVec2D = CharacterOwner->GetActorForwardVector();
+			LookVec2D.Z = 0.0f;
+			// Take accel and split it into forward, and sideways direction along the XY look vector
+			auto PerpendicularAccel = (LookVec2D | Acceleration) * LookVec2D;
+			auto TangentialAccel = Acceleration - PerpendicularAccel;
+			// We then compute the cosine of our look vector, which is exactly the amount of previous 
+			// perpendicular velocity that got converted into tangent velocity
+			auto Dir = Acceleration.CosineAngle2D(LookVec);
+			// And finally, set the acceleration in the new basis (the one with pitch)
+			Acceleration = Dir * LookVec * PerpendicularAccel.Size2D() + TangentialAccel;
+
+			// Find veer
+			const FVector AccelDir = Acceleration.GetSafeNormal();
+			const float Veer = Velocity.X * AccelDir.X + Velocity.Y * AccelDir.Y + Velocity.Z * AccelDir.Z;
+			// Get add speed with air speed cap
+			const float AddSpeed = Acceleration.Size() - Veer;
+			if (AddSpeed > 0.0f) {
+				// Apply acceleration
+				const float AccelerationMultiplier = FluidAccelerationMultiplier;
+				FVector CurrentAcceleration = Acceleration * AccelerationMultiplier * DeltaTime;
+				CurrentAcceleration = CurrentAcceleration.GetClampedToMaxSize(AddSpeed);
+				Velocity += CurrentAcceleration;
+			}
+		}
+	}
 	// ladder movement
 	else if (bOnLadder)
 	{
@@ -1740,7 +1779,11 @@ bool UPBPlayerMovement::MoveUpdatedComponentImpl(const FVector& Delta, const FQu
 bool UPBPlayerMovement::CanAttemptJump() const
 {
 	bool bCanAttemptJump = IsJumpAllowed();
-	if (IsMovingOnGround())
+	if (IsSwimming())
+	{
+		bCanAttemptJump = false;
+	}
+	else if (IsMovingOnGround())
 	{
 		const float FloorZ = FVector(0.0f, 0.0f, 1.0f) | CurrentFloor.HitResult.ImpactNormal;
 		const float WalkableFloor = GetWalkableFloorZ();
@@ -1760,7 +1803,11 @@ float UPBPlayerMovement::GetMaxSpeed() const
 		return (PBCharacter->IsSprinting() ? SprintSpeed : WalkSpeed) * 1.5f;
 	}
 	float Speed;
-	if (PBCharacter->IsSprinting())
+	if (IsSwimming()) 
+	{
+		Speed = MaxSwimSpeed;
+	}
+	else if (PBCharacter->IsSprinting())
 	{
 		if (IsCrouching() && bCrouchFrameTolerated)
 		{
@@ -1797,4 +1844,9 @@ void UPBPlayerMovement::ApplyDownwardForce(float DeltaSeconds)
 			BaseComp->AddForceAtLocation(Gravity * Mass * StandingDownwardForceScale, CurrentFloor.HitResult.ImpactPoint, CurrentFloor.HitResult.BoneName);
 		}
 	}
+}
+
+bool UPBPlayerMovement::IsInWater() const
+{
+	return Super::IsInWater();
 }

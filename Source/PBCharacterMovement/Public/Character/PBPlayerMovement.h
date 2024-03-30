@@ -143,6 +143,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Swimming", meta = (DisplayAfter = "Buoyancy"))
 	float FluidAccelerationMultiplier;
 
+	/** The percentage of the body that needs to be submerged to be considered swimming. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Swimming")
+	float ImmersionThreshold = 0.70f;
+
 public:
 	/** Print pos and vel (Source: cl_showpos) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement (General Settings)")
@@ -226,6 +230,13 @@ public:
 	virtual float GetMaxSpeed() const override;
 
 protected:
+	virtual void PhysicsVolumeChanged(class APhysicsVolume* NewVolume) override;
+	virtual bool IsInWater() const override;
+	virtual bool IsTouchingWater() const;
+	virtual float GetCachedImmersionDepth() const;
+	virtual float UpdateCachedImmersionDepth();
+	virtual void EnterDeepWater();
+	virtual void LeaveDeepWater();
 
 private:
 	/** Plays sound effect according to movement and surface */
@@ -239,6 +250,8 @@ private:
 	float DefaultStepHeight;
 	float DefaultWalkableFloorZ;
 	float SurfaceFriction;
+
+	TOptional<float> CachedImmersionDepth;
 
 	/** The time that the player can remount on the ladder */
 	float OffLadderTicks = -1.0f;

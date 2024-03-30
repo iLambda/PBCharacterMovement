@@ -183,6 +183,9 @@ void UPBPlayerMovement::TickComponent(float DeltaTime, enum ELevelTick TickType,
 		GEngine->AddOnScreenDebugMessage(3, 1.0f, FColor::Green, FString::Printf(TEXT("vel: %f"), Velocity.Size()));
 	}
 
+	// Compute immersion depth, and cache
+	UpdateCachedImmersionDepth();
+
 	if (RollAngle != 0 && RollSpeed != 0 && PBCharacter->GetController())
 	{
 		FRotator ControlRotation = PBCharacter->GetController()->GetControlRotation();
@@ -205,6 +208,16 @@ void UPBPlayerMovement::TickComponent(float DeltaTime, enum ELevelTick TickType,
 		bBrakingWindowElapsed = false; // don't brake in the air lol
 		BrakingWindowTimeElapsed = 0;
 		// make sure this is cleared so the window doesn't shrink on subsequent bhops until it expires.
+	}
+
+	// Check for water updates
+	if (!IsSwimming() && IsTouchingWater() && IsInWater()) {
+		// Not swimming, but we are in deep enough water to start swimming
+		EnterDeepWater();
+	}
+	else if (IsSwimming() && !IsInWater()) {
+		// Swimming, and we are not in deep water anymore
+		LeaveDeepWater();
 	}
 	
 	bCrouchFrameTolerated = IsCrouching();
@@ -1832,4 +1845,90 @@ float UPBPlayerMovement::GetMaxSpeed() const
 	}
 
 	return Speed;
+}
+
+void UPBPlayerMovement::PhysicsVolumeChanged(APhysicsVolume* NewVolume)
+{
+	if (!HasValidData()) {
+		return;
+	}
+
+	if (!NewVolume) {
+		return;
+	}
+
+	if (IsSwimming() && !NewVolume->bWaterVolume) {
+		// We're swimming, but left a water volume.
+		// At this point, just ensure we left deep water,
+		// without any ImmersionDepth() check
+		LeaveDeepWater();
+	}
+
+	if (NewVolume->bWaterVolume && !IsSwimming()) {
+		// We're not swimming, but entered a water volume.
+		// Recompute immersion depth, because volume just changed
+		UpdateCachedImmersionDepth();
+		// Check if we now are in deep enough water
+		if (IsInWater()) {
+			EnterDeepWater();
+		}
+	}
+}
+
+bool UPBPlayerMovement::IsInWater() const
+{
+	return IsTouchingWater() && GetCachedImmersionDepth() > ImmersionThreshold;
+}
+
+bool UPBPlayerMovement::IsTouchingWater() const
+{
+	const APhysicsVolume* PhysVolume = GetPhysicsVolume();
+	return PhysVolume && PhysVolume->bWaterVolume;
+}
+
+float UPBPlayerMovement::GetCachedImmersionDepth() const
+{
+	return CachedImmersionDepth.IsSet() 
+		? CachedImmersionDepth.GetValue() 
+		: ImmersionDepth();
+}
+
+float UPBPlayerMovement::UpdateCachedImmersionDepth()
+{
+	CachedImmersionDepth = ImmersionDepth();
+	return CachedImmersionDepth.GetValue();
+}
+
+void UPBPlayerMovement::EnterDeepWater()
+{
+	// Ensure we are in a water volume 
+	ensureMsgf(IsTouchingWater(), L"EnterDeepWater() called, but we are not in a water volume.");
+
+	// Just entered water
+	if (!CanEverSwim()) {
+		// AI needs to stop any current moves
+		IPathFollowingAgentInterface* PFAgent = GetPathFollowingAgent();
+		if (PFAgent) {
+			//PathFollowingComp->AbortMove(*this, FPathFollowingResultFlags::MovementStop);
+			PFAgent->OnUnableToMove(*this);
+		}
+	} else if (!IsSwimming()) {
+		SetMovementMode(MOVE_Swimming);
+	}
+}
+
+void UPBPlayerMovement::LeaveDeepWater()
+{
+	// Ensure that we are swimming
+	ensureMsgf(IsSwimming(), L"LeaveDeepWater() called, but we were not swimming.");
+
+	// just left the water - check if should jump out
+	SetMovementMode(MOVE_Falling);
+	FVector JumpDir(0.f);
+	FVector WallNormal(0.f);
+	if (Acceleration.Z > 0.f && ShouldJumpOutOfWater(JumpDir)
+		&& ((JumpDir | Acceleration) > 0.f) && CheckWaterJump(JumpDir, WallNormal)) {
+		JumpOutOfWater(WallNormal);
+		Velocity.Z = OutofWaterZ; //set here so physics uses this for remainder of tick
+	}
 }

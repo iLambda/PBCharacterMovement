@@ -1922,13 +1922,28 @@ void UPBPlayerMovement::LeaveDeepWater()
 	// Ensure that we are swimming
 	ensureMsgf(IsSwimming(), L"LeaveDeepWater() called, but we were not swimming.");
 
+	// prepare a few computations
+	bool wantsJump = IsJumpAllowed() && CharacterOwner && CharacterOwner->bPressedJump;
+	float accelZ = CharacterOwner ? (Acceleration | CharacterOwner->GetControlRotation().Quaternion().GetAxisZ()) : 0.0f;
+
 	// just left the water - check if should jump out
 	SetMovementMode(MOVE_Falling);
 	FVector JumpDir(0.f);
 	FVector WallNormal(0.f);
-	if (Acceleration.Z > 0.f && ShouldJumpOutOfWater(JumpDir)
-		&& ((JumpDir | Acceleration) > 0.f) && CheckWaterJump(JumpDir, WallNormal)) {
+
+	// Make individual checks to see if we 
+	bool jumpAtSurface = IsWaterJumpAllowed(EWaterJumpMode::Surface) && wantsJump;
+	bool jumpNearWall = IsWaterJumpAllowed(EWaterJumpMode::NearWall)
+						 && accelZ > 1e-4
+						 && ShouldJumpOutOfWater(JumpDir)
+						 && ((JumpDir | Acceleration) > 0.f)
+						 && CheckWaterJump(JumpDir, WallNormal);
+
+	// Check if we jumped out of water
+	if (jumpAtSurface || jumpNearWall)
+	{
 		JumpOutOfWater(WallNormal);
-		Velocity.Z = OutofWaterZ; //set here so physics uses this for remainder of tick
+		Velocity.Z = jumpNearWall ? OutofWaterZ : WaterJumpVelocity;
+			//set here so physics uses this for remainder of tick
 	}
 }

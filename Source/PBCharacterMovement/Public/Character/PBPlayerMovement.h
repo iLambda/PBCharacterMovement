@@ -20,6 +20,15 @@
 
 class USoundCue;
 
+UENUM(BlueprintType, meta = (Bitflags, UseEnumValuesAsMaskValuesInEditor = "true"))
+enum class EWaterJumpMode : uint8
+{
+	None = 0 UMETA(Hidden),
+	Surface = 1 << 0,
+	NearWall = 1 << 1,
+};
+ENUM_CLASS_FLAGS(EWaterJumpMode);
+
 UCLASS()
 class PBCHARACTERMOVEMENT_API UPBPlayerMovement : public UCharacterMovementComponent
 {
@@ -147,6 +156,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Swimming")
 	float ImmersionThreshold = 0.70f;
 
+	/** Z velocity applied when pawn tries to jump in water */
+	UPROPERTY(Category = "Character Movement: Swimming", EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (ForceUnits = "cm/s", DisplayAfter = "OutofWaterZ"))
+	float WaterJumpVelocity = 300;
+
+	/** Can the character perform a water jump ? */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Jumping / Falling", meta = (Bitmask, BitmaskEnum = "/Script/PBCharacterMovement.EWaterJumpMode", DisplayName = "Allowed Water Jumps"))
+	uint8 WaterJumpMode = 0xFF;
+	
+
 public:
 	/** Print pos and vel (Source: cl_showpos) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement (General Settings)")
@@ -228,6 +246,11 @@ public:
 	}
 
 	virtual float GetMaxSpeed() const override;
+
+	bool IsWaterJumpAllowed(const EWaterJumpMode& Mode) const
+	{
+		return (WaterJumpMode & ((uint8)Mode));
+	}
 
 protected:
 	virtual void PhysicsVolumeChanged(class APhysicsVolume* NewVolume) override;

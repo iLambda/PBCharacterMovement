@@ -1833,15 +1833,3 @@ float UPBPlayerMovement::GetMaxSpeed() const
 
 	return Speed;
 }
-
-void UPBPlayerMovement::ApplyDownwardForce(float DeltaSeconds)
-{
-	if (StandingDownwardForceScale != 0.0f && CurrentFloor.HitResult.IsValidBlockingHit()) {
-		UPrimitiveComponent* BaseComp = CurrentFloor.HitResult.GetComponent();
-		const FVector Gravity = -GetGravityDirection() * GetGravityZ();
-
-		if (BaseComp && BaseComp->IsAnySimulatingPhysics() && !Gravity.IsZero()) {
-			BaseComp->AddForceAtLocation(Gravity * Mass * StandingDownwardForceScale, CurrentFloor.HitResult.ImpactPoint, CurrentFloor.HitResult.BoneName);
-		}
-	}
-}

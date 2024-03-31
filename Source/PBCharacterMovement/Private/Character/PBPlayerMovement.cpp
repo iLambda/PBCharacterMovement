@@ -1856,19 +1856,22 @@ void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& D
 
 	FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
 	DisplayDebugManager.SetDrawColor(FColor::White);
-	FString T = FString::Printf(TEXT("CHARACTER MOVEMENT Floor %s Crouched %i"), *CurrentFloor.HitResult.ImpactNormal.ToString(), IsCrouching());
+	FString T = FString::Printf(TEXT("CHARACTER MOVEMENT Floor %s Crouched %i %s"), 
+									*CurrentFloor.HitResult.ImpactNormal.ToString(), 
+									IsCrouching(), 
+									bIsInCrouchTransition ? L"(transition)" : L"");
 	DisplayDebugManager.DrawString(T);
 
 	T = FString::Printf(TEXT("Updated Component: %s"), *UpdatedComponent->GetName());
 	DisplayDebugManager.DrawString(T);
 
-	T = FString::Printf(TEXT("Acceleration: %s"), *Acceleration.ToCompactString());
+	T = FString::Printf(TEXT("RootMotionSources: %d active"), CurrentRootMotion.RootMotionSources.Num());
 	DisplayDebugManager.DrawString(T);
 
 	T = FString::Printf(TEXT("bForceMaxAccel: %i"), bForceMaxAccel);
 	DisplayDebugManager.DrawString(T);
 
-	T = FString::Printf(TEXT("RootMotionSources: %d active"), CurrentRootMotion.RootMotionSources.Num());
+	T = FString::Printf(TEXT("Acceleration: %s"), *Acceleration.ToCompactString());
 	DisplayDebugManager.DrawString(T);
 
 	T = FString::Printf(TEXT("Water Level: %s"), IsTouchingWater() ? IsInWater() ? L"Deep" : L"Shallow" : L"None");

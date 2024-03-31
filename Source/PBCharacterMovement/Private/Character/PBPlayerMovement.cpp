@@ -1956,6 +1956,11 @@ void UPBPlayerMovement::EnterDeepWater()
 			PFAgent->OnUnableToMove(*this);
 		}
 	} else if (!IsSwimming()) {
+		// Force uncrouch
+		if (CharacterOwner) {
+			CharacterOwner->UnCrouch();
+		}
+		// Set to swimming
 		SetMovementMode(MOVE_Swimming);
 	}
 }

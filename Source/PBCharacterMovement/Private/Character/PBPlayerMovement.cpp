@@ -3,6 +3,7 @@
 #include "Character/PBPlayerMovement.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -1845,6 +1846,45 @@ float UPBPlayerMovement::GetMaxSpeed() const
 	}
 
 	return Speed;
+}
+
+void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos)
+{
+	if (CharacterOwner == NULL) {
+		return;
+	}
+
+	FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
+	DisplayDebugManager.SetDrawColor(FColor::White);
+	FString T = FString::Printf(TEXT("CHARACTER MOVEMENT Floor %s Crouched %i"), *CurrentFloor.HitResult.ImpactNormal.ToString(), IsCrouching());
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("Updated Component: %s"), *UpdatedComponent->GetName());
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("Acceleration: %s"), *Acceleration.ToCompactString());
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("bForceMaxAccel: %i"), bForceMaxAccel);
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("RootMotionSources: %d active"), CurrentRootMotion.RootMotionSources.Num());
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("Water Level: %s"), IsTouchingWater() ? IsInWater() ? L"Deep" : L"Shallow" : L"None");
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("ImmersionDepth: %.2f"), (GetCachedImmersionDepth() * 100.));
+	DisplayDebugManager.DrawString(T);
+
+	APhysicsVolume* PhysicsVolume = GetPhysicsVolume();
+
+	const UPrimitiveComponent* BaseComponent = CharacterOwner->GetMovementBase();
+	const AActor* BaseActor = BaseComponent ? BaseComponent->GetOwner() : NULL;
+
+	T = FString::Printf(TEXT("%s In physicsvolume %s on base %s component %s gravity %f"), *GetMovementName(), (PhysicsVolume ? *PhysicsVolume->GetName() : TEXT("None")),
+						(BaseActor ? *BaseActor->GetName() : TEXT("None")), (BaseComponent ? *BaseComponent->GetName() : TEXT("None")), GetGravityZ());
+	DisplayDebugManager.DrawString(T);
 }
 
 void UPBPlayerMovement::PhysicsVolumeChanged(APhysicsVolume* NewVolume)

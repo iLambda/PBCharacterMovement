@@ -261,6 +261,8 @@ protected:
 	virtual void EnterDeepWater();
 	virtual void LeaveDeepWater();
 
+	virtual void DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos) override;
+
 private:
 	/** Plays sound effect according to movement and surface */
 	void PlayMoveSound(float DeltaTime);

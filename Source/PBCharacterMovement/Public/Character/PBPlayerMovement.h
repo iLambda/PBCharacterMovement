@@ -93,9 +93,6 @@ protected:
 	/** If in the crouching transition */
 	bool bIsInCrouchTransition = false;
 
-	/** If in the crouching transition */
-	bool bInCrouch;
-
 	/** The PB player character */
 	class APBPlayerCharacter* PBCharacter;
 
@@ -238,11 +235,6 @@ public:
 	bool IsBrakingWindowTolerated() const
 	{
 		return bBrakingWindowElapsed;
-	}
-
-	bool IsInCrouch() const
-	{
-		return bInCrouch;
 	}
 
 	virtual float GetMaxSpeed() const override;

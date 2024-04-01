@@ -171,6 +171,14 @@ void UPBPlayerMovement::TickComponent(float DeltaTime, enum ELevelTick TickType,
 		SetMovementMode(DeferredMovementMode);
 	}
 
+	// Increment powersliding window
+	if (!bIsPowerSliding) {
+		PowerSlidingTimeElapsed += DeltaTime * 1000;
+		if (PowerSlidingTimeElapsed >= SlidingBoostCooldown) {
+			PowerSlidingTimeElapsed = INFINITY;
+		}
+	}
+
 	// Skip player movement when we're simulating physics (ie ragdoll)
 	if (UpdatedComponent->IsSimulatingPhysics())
 	{
@@ -1218,6 +1226,101 @@ void UPBPlayerMovement::PhysFalling(float deltaTime, int32 Iterations)
 	}
 }
 
+void UPBPlayerMovement::SetPostLandedPhysics(const FHitResult& Hit)
+{
+	// UE-COPY: UCharacterMovementComponent::SetPostLandedPhysics(const FHitResult& Hit)
+
+	if (CharacterOwner) {
+		if (CanEverSwim() && IsInWater()) {
+			SetMovementMode(MOVE_Swimming);
+		} else {
+			const FVector PreImpactAccel = Acceleration + (IsFalling() ? -GetGravityDirection() * GetGravityZ() : FVector::ZeroVector);
+			const FVector PreImpactVelocity = Velocity;
+
+			// If we are crouching or going to when we land, enable powerslide
+			// but we do not get the initial boost
+			if (IsCrouchingOrGoingTo()) {
+				StartPowerSlide(false);
+			}
+
+			if (DefaultLandMovementMode == MOVE_Walking ||
+				DefaultLandMovementMode == MOVE_NavWalking ||
+				DefaultLandMovementMode == MOVE_Falling) {
+				SetMovementMode(GetGroundMovementMode());
+			} else {
+				SetDefaultMovementMode();
+			}
+
+			ApplyImpactPhysicsForces(Hit, PreImpactAccel, PreImpactVelocity);
+		}
+	}
+}
+
+bool UPBPlayerMovement::MustStopPowerSlide() const
+{
+	// we have to be powersliding first
+	if (!bIsPowerSliding) { 
+		return false; 
+	}
+
+	// if we're not crouching (transition inclusive), stop the slide
+	if (!IsCrouchingOrGoingTo()) {
+		return true; 
+	}
+
+	// if the acceleration is opposite to movement, stop the slide
+	if (!Acceleration.IsNearlyZero() && (Acceleration.GetSafeNormal() | Velocity.GetSafeNormal()) < 0.f) {
+		return true;
+	}
+
+	// if we're touching the floor and the angle is steeper than the angle limit, keep slide going
+	auto cosFloorAngle = CurrentFloor.HitResult.ImpactNormal | -GetGravityDirection();
+	if (IsMovingOnGround() && FMath::Abs(cosFloorAngle) <= FMath::Cos(FMath::DegreesToRadians(AutoSlidingFloorAngle))) {
+		return false;
+	}
+	
+	// if too slow, stop the slide
+	return (Velocity.SquaredLength() <= FMath::Square(SlidingStopSpeed));
+}
+
+bool UPBPlayerMovement::CanPowerSlide() const
+{
+	return 
+		// we must not powersliding
+		!bIsPowerSliding
+		// are we moving on ground
+		&& IsMovingOnGround()
+		// are we currently crouching, or transitionning towards crouching
+		&& IsCrouchingOrGoingTo()
+		// are we going fast enough
+		&& (Velocity.SquaredLength() >= FMath::Square(SlidingStartSpeed));
+}
+
+void UPBPlayerMovement::StartPowerSlide(bool IsBoostedSlide)
+{
+	// We start a powerslide
+	bIsPowerSliding = true;
+
+	// If timer not elapsed, reset timer to avoid spam
+	if (PowerSlidingTimeElapsed <= SlidingBoostCooldown) {
+		PowerSlidingTimeElapsed = 0.f;
+	}
+	else if (IsBoostedSlide) {
+		Velocity += SlidingSpeedBoost * Acceleration.GetSafeNormal();
+	}
+}
+
+void UPBPlayerMovement::EndPowerSlide()
+{
+	// If we were powersliding, start the timer
+	if (bIsPowerSliding) {
+		PowerSlidingTimeElapsed = 0.0f;
+	}
+
+	// We stop the powerslide
+	bIsPowerSliding = false;
+}
+
 void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
 {
 	// UE4-COPY: void UCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
@@ -1274,8 +1377,32 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 	const bool bZeroAcceleration = Acceleration.IsNearlyZero();
 	const bool bIsGroundMove = IsMovingOnGround() && bBrakingWindowElapsed;
 
+	// Check if we should start or stop a power slide
+	if (CanPowerSlide()) 
+	{ 
+		bool isBoosted = UpdatedComponent && ((UpdatedComponent->GetForwardVector() | Acceleration.GetSafeNormal()) > 0.75f);
+		StartPowerSlide(isBoosted);
+	}
+	else if (MustStopPowerSlide())	
+	{ 
+		EndPowerSlide(); 
+	}
+
 	// Apply friction
-	if (bIsGroundMove)
+	if (bIsPowerSliding)
+	{
+		// Only brake if we're touching the ground
+		if (bIsGroundMove) {
+			// Apply gravity
+			const FVector Gravity = -GetGravityDirection() * GetGravityZ();
+			Velocity += FVector::VectorPlaneProject(Gravity * DeltaTime, CurrentFloor.HitResult.Normal);
+
+			// TODO : BrakingDeceleration depending on angle ?
+			const float ActualBrakingFriction = BrakingFriction * SlidingFrictionMultiplier * SurfaceFriction;
+			ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, BrakingDecelerationSliding);
+		}
+	}
+	else if (bIsGroundMove)
 	{
 		const bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 		const FVector OldVelocity = Velocity;
@@ -1821,24 +1948,17 @@ float UPBPlayerMovement::GetMaxSpeed() const
 	{
 		Speed = MaxSwimSpeed;
 	}
+	else if (IsCrouching() && bCrouchFrameTolerated) 
+	{
+		Speed = MaxWalkSpeedCrouched;
+	}
 	else if (PBCharacter->IsSprinting())
 	{
-		if (IsCrouching() && bCrouchFrameTolerated)
-		{
-			Speed = MaxWalkSpeedCrouched * 1.7f;
-		}
-		else
-		{
-			Speed = SprintSpeed;
-		}
+		Speed = SprintSpeed;
 	}
 	else if (PBCharacter->DoesWantToWalk())
 	{
 		Speed = WalkSpeed;
-	}
-	else if (IsCrouching() && bCrouchFrameTolerated)
-	{
-		Speed = MaxWalkSpeedCrouched;
 	}
 	else
 	{
@@ -1856,8 +1976,10 @@ void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& D
 
 	FDisplayDebugManager& DisplayDebugManager = Canvas->DisplayDebugManager;
 	DisplayDebugManager.SetDrawColor(FColor::White);
-	FString T = FString::Printf(TEXT("CHARACTER MOVEMENT Floor %s Crouched %i %s"), 
-									*CurrentFloor.HitResult.ImpactNormal.ToString(), 
+	FString T = FString::Printf(TEXT("CHARACTER MOVEMENT Floor %s (%.2f deg) Sliding %i Crouched %i %s"), 
+									*CurrentFloor.HitResult.ImpactNormal.ToString(),
+									FMath::RadiansToDegrees(FMath::Acos(CurrentFloor.HitResult.ImpactNormal | -GetGravityDirection())),
+									bIsPowerSliding,
 									IsCrouching(), 
 									bIsInCrouchTransition ? L"(transition)" : L"");
 	DisplayDebugManager.DrawString(T);

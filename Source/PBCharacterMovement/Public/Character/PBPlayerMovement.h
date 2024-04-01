@@ -160,7 +160,35 @@ protected:
 	/** Can the character perform a water jump ? */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Jumping / Falling", meta = (Bitmask, BitmaskEnum = "/Script/PBCharacterMovement.EWaterJumpMode", DisplayName = "Allowed Water Jumps"))
 	uint8 WaterJumpMode = 0xFF;
+
+	/** The speed target at which we want to be considered sliding if we crouch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
+	float SlidingStartSpeed = 500.f;
 	
+	/** The speed target at which we want to be considered to stop sliding. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
+	float SlidingStopSpeed = 361.9f;
+
+	/** The amount of speed we gain by powersliding. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
+	float SlidingSpeedBoost = 200.f;
+
+	/** The multiplier the floor friction when we're sliding. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
+	float SlidingFrictionMultiplier = .25f;
+
+	/** Deceleration when sliding and not applying acceleration. This is a constant opposing force that directly lowers velocity by a constant value. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding", meta = (ClampMin = "0", UIMin = "0"))
+	float BrakingDecelerationSliding = 500.f;
+
+	/** The time before the end of a powerslide that we must wait to start another. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding", meta = (Units = "Milliseconds"))
+	float SlidingBoostCooldown = 1000.f;
+
+	/** The min angle of a floor that will prevent us from stopping to slide */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding", meta = (Units = "Degrees", ClampMin = "0", ClampMax = "90", UIMin = "0", UIMax = "90"))
+	float AutoSlidingFloorAngle = 15.f;
+
 
 public:
 	/** Print pos and vel (Source: cl_showpos) */
@@ -244,6 +272,11 @@ public:
 		return (WaterJumpMode & ((uint8)Mode));
 	}
 
+	bool IsCrouchingOrGoingTo() const
+	{
+		return IsCrouching() || (bIsInCrouchTransition && bWantsToCrouch);
+	}
+
 protected:
 	virtual void PhysicsVolumeChanged(class APhysicsVolume* NewVolume) override;
 	virtual bool IsInWater() const override;
@@ -254,6 +287,14 @@ protected:
 	virtual void LeaveDeepWater();
 
 	virtual void DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos) override;
+	virtual void SetPostLandedPhysics(const FHitResult& Hit) override;
+
+	bool bIsPowerSliding = false;
+	float PowerSlidingTimeElapsed = INFINITY;
+	virtual void StartPowerSlide(bool IsBoostedSlide);
+	virtual void EndPowerSlide();
+	virtual bool MustStopPowerSlide() const;
+	virtual bool CanPowerSlide() const;
 
 private:
 	/** Plays sound effect according to movement and surface */

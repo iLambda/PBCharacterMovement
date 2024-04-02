@@ -189,6 +189,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding", meta = (Units = "Degrees", ClampMin = "0", ClampMax = "90", UIMin = "0", UIMax = "90"))
 	float AutoSlidingFloorAngle = 15.f;
 
+	/** Only allow powerslides if we're going forward. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
+	bool bOnlyForwardPowerslides = true;
 
 public:
 	/** Print pos and vel (Source: cl_showpos) */

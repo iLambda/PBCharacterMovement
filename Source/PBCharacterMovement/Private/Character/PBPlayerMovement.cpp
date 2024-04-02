@@ -1285,15 +1285,31 @@ bool UPBPlayerMovement::MustStopPowerSlide() const
 
 bool UPBPlayerMovement::CanPowerSlide() const
 {
-	return 
-		// we must not powersliding
-		!bIsPowerSliding
-		// are we moving on ground
-		&& IsMovingOnGround()
-		// are we currently crouching, or transitionning towards crouching
-		&& IsCrouchingOrGoingTo()
-		// are we going fast enough
-		&& (Velocity.SquaredLength() >= FMath::Square(SlidingStartSpeed));
+	// we must not be powersliding
+	if (bIsPowerSliding) {
+		return false;
+	}
+
+	// we must be on ground, crouching
+	if (!(IsMovingOnGround() && IsCrouchingOrGoingTo())) {
+		return false;
+	}
+
+	// we must be going fast enough
+	if (Velocity.SquaredLength() < FMath::Square(SlidingStartSpeed)) {
+		return false;
+	}
+
+	// finally, check if we must be moving forward
+	if (bOnlyForwardPowerslides && UpdatedComponent) {
+		// if accel is nonzero and not forwards, we can't slide
+		if (!Acceleration.IsNearlyZero() && (Acceleration.GetSafeNormal() | UpdatedComponent->GetForwardVector()) < 0.7f) {
+			return false;
+		}
+	}
+
+	// we can powerslide
+	return true;
 }
 
 void UPBPlayerMovement::StartPowerSlide(bool IsBoostedSlide)

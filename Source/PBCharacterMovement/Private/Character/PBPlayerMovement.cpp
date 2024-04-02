@@ -1395,11 +1395,13 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 		if (bIsGroundMove) {
 			// Apply gravity
 			const FVector Gravity = -GetGravityDirection() * GetGravityZ();
-			Velocity += FVector::VectorPlaneProject(Gravity * DeltaTime, CurrentFloor.HitResult.Normal);
+			Velocity += FVector::VectorPlaneProject(Gravity * DeltaTime, CurrentFloor.HitResult.ImpactNormal);
 
 			// TODO : BrakingDeceleration depending on angle ?
+			const float FloorAngle = FMath::Acos(CurrentFloor.HitResult.ImpactNormal | -GetGravityDirection()) / (PI/2.);
 			const float ActualBrakingFriction = BrakingFriction * SlidingFrictionMultiplier * SurfaceFriction;
-			ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, BrakingDecelerationSliding);
+			const float ActualBrakingDeceleration = (1. - FMath::Pow(FloorAngle, 2.)) * BrakingDecelerationSliding;
+			ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, ActualBrakingDeceleration);
 		}
 	}
 	else if (bIsGroundMove)

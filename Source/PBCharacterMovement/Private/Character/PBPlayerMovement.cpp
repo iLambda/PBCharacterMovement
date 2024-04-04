@@ -1589,13 +1589,15 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 		const float ActualBrakingFriction = (bUseSeparateBrakingFriction ? BrakingFriction : Friction) * SurfaceFriction;
 		ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, BrakingDeceleration);
 
-		// Don't allow braking to lower us below max speed if we started above it.
-		// This always applies if we're on the ground, but if we're on a ladder,
-		// then it applies iff bGrabbingLadderBrakesMaxSpeed is false
-		if (!(IsOnLadder() && bGrabbingLadderBrakesMaxSpeed)) {
+		if (!IsOnLadder()) {
+			// Don't allow braking to lower us below max speed if we started above it.
 			if (bVelocityOverMax && Velocity.SizeSquared() < FMath::Square(MaxSpeed) && FVector::DotProduct(Acceleration, OldVelocity) > 0.0f) {
 				Velocity = OldVelocity.GetSafeNormal() * MaxSpeed;
 			}
+		}
+		else if (bGrabbingLadderBrakesMaxSpeed && bVelocityOverMax) {
+			// Force braking
+			Velocity = OldVelocity.GetSafeNormal() * MaxSpeed;
 		}
 	}
 

@@ -3,10 +3,13 @@
 This is a fork of [ProjectBorealis/PBCharacterMovement](https://github.com/ProjectBorealis/PBCharacterMovement), which aims to add features that were left out and/or not implemented at all in the original repo.
 All of the added mechanics are similar to some of other Source Engine based games, like TF|2 and Apex Legends.
 
+**IMPORTANT NOTE**: All of the code in this repository has been tested or is currently in testing, but bugs might remain. Be careful when using it in production. If you find a bug (or even better, find a fix for it), do not hesitate to create an issue.
+
+
 A non-exhaustive list of such improvements:
 * Swimming
 * Powersliding (based on Apex Legends sliding mechanics)
-* **[To be implemented]** Ladder climbing (based on Half Life 1 ladder physics)
+* Ladder climbing (based on Half Life 1 ladder physics)
 * **[To be implemented]** Wallrunning (based on [Titanfall 2 wallrunning mechanics](https://youtu.be/n1mbGmOZWcU))
 * **[To be implemented]** Mantling (idem)
 

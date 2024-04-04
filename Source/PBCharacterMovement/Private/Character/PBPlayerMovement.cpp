@@ -22,6 +22,14 @@ static TAutoConsoleVariable<int32> CVarShowPos(TEXT("cl.ShowPos"), 0, TEXT("Show
 
 DECLARE_CYCLE_STAT(TEXT("Char StepUp"), STAT_CharStepUp, STATGROUP_Character);
 DECLARE_CYCLE_STAT(TEXT("Char PhysFalling"), STAT_CharPhysFalling, STATGROUP_Character);
+DECLARE_CYCLE_STAT(TEXT("Char PhysLadder"), STAT_CharPhysLadder, STATGROUP_Character);
+
+// Defines for build configs
+#if DO_CHECK && !UE_BUILD_SHIPPING // Disable even if checks in shipping are enabled.
+#define devCode( Code )		checkCode( Code )
+#else
+#define devCode(...)
+#endif
 
 // MAGIC NUMBERS
 constexpr float JumpVelocity = 266.7f;
@@ -86,7 +94,6 @@ UPBPlayerMovement::UPBPlayerMovement()
 	// Default show pos to false
 	bShowPos = false;
 	// We aren't on a ladder at first
-	bOnLadder = false;
 	OffLadderTicks = LADDER_MOUNT_TIMEOUT;
 	LadderSpeed = 381.0f;
 	// Speed multiplier bounds
@@ -179,6 +186,30 @@ void UPBPlayerMovement::TickComponent(float DeltaTime, enum ELevelTick TickType,
 		}
 	}
 
+	// Ladder regrab window if we are not on a ladder
+	if (!IsOnLadder() && !FMath::IsNearlyZero(GrabSameLadderCooldown)) {
+		// Increment timer
+		LadderRegrabTimeElapsed += DeltaTime * 1000;
+		// Window is over, we can regrab
+		if (LadderRegrabTimeElapsed >= GrabSameLadderCooldown) {
+			LadderRegrabTimeElapsed = INFINITY;
+			// Check if we have regrabbable ladder data saved
+			if (RegrabbableLadderData.IsSet() && IsValid(RegrabbableLadderData->Target)) {
+				// If we are still on ladder, regrab. If we are not,
+				// then remove the potential ladder data
+				if (OverlapsLadder(RegrabbableLadderData.GetValue())) {
+					GrabLadder(RegrabbableLadderData.GetValue());
+				}
+				else {
+					RegrabbableLadderData.Reset();
+				}
+			}
+		}
+	}
+	else {
+		LadderRegrabTimeElapsed = 0.;
+	}
+
 	// Skip player movement when we're simulating physics (ie ragdoll)
 	if (UpdatedComponent->IsSimulatingPhysics())
 	{
@@ -241,13 +272,16 @@ bool UPBPlayerMovement::DoJump(bool bClientSimulation)
 		// Don't jump if we can't move up/down.
 		if (!bConstrainToPlane || FMath::Abs(PlaneConstraintNormal.Z) != 1.f)
 		{
-			if (Velocity.Z <= 0.0f)
-			{
-				Velocity.Z = JumpZVelocity;
+			// If not on ladder, normal jump. Otherwise, jump from ladder
+			if (!IsOnLadder()) {
+				if (Velocity.Z <= 0.0f) {
+					Velocity.Z = JumpZVelocity;
+				} else {
+					Velocity.Z += JumpZVelocity;
+				}
 			}
-			else
-			{
-				Velocity.Z += JumpZVelocity;
+			else {
+				Velocity += GetLadderJumpVelocity();
 			}
 			SetMovementMode(MOVE_Falling);
 			return true;
@@ -284,7 +318,7 @@ FVector UPBPlayerMovement::ComputeSlideVector(const FVector& Delta, const float 
 
 FVector UPBPlayerMovement::HandleSlopeBoosting(const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	if (bOnLadder || bCheatFlying)
+	if (IsOnLadder() || bCheatFlying)
 	{
 		return Super::HandleSlopeBoosting(SlideResult, Delta, Time, Normal, Hit);
 	}
@@ -469,6 +503,18 @@ void UPBPlayerMovement::OnMovementModeChanged(EMovementMode PreviousMovementMode
 		bJumped = true;
 	}
 
+	if (PreviousMovementMode == MOVE_Custom && PreviousCustomMode == MOVECUSTOM_Ladder) 
+	{
+		if (bAllowRegrabLadder) {
+			LadderRegrabTimeElapsed = 0.f;
+			RegrabbableLadderData = LadderData;
+		}
+		else {
+			LadderRegrabTimeElapsed = INFINITY;
+			RegrabbableLadderData.Reset();
+		}
+	}
+
 	FHitResult Hit;
 	TraceCharacterFloor(Hit);
 	PlayJumpSound(Hit, bJumped);
@@ -615,7 +661,7 @@ void UPBPlayerMovement::UpdateSurfaceFriction(bool bIsSliding)
 	}
 	else
 	{
-		const bool bPlayerControlsMovedVertically = bOnLadder || Velocity.Z > JumpVelocity || Velocity.Z <= 0.0f || bCheatFlying;
+		const bool bPlayerControlsMovedVertically = IsOnLadder() || Velocity.Z > JumpVelocity || Velocity.Z <= 0.0f || bCheatFlying;
 		if (bPlayerControlsMovedVertically)
 		{
 			SurfaceFriction = 1.0f;
@@ -655,7 +701,7 @@ void UPBPlayerMovement::UpdateCrouching(float DeltaTime, bool bOnlyUncrouch)
 		}
 		else if (!bOnlyUncrouch)
 		{
-			if (bOnLadder)	  // if on a ladder, cancel this because bWantsToCrouch should be false
+			if (IsOnLadder())	  // if on a ladder, cancel this because bWantsToCrouch should be false
 			{
 				bIsInCrouchTransition = false;
 			}
@@ -710,7 +756,7 @@ void UPBPlayerMovement::PlayMoveSound(const float DeltaTime)
 	float RunSpeedThreshold;
 	float SprintSpeedThreshold;
 
-	if (IsCrouching() || bOnLadder)
+	if (IsCrouching() || IsOnLadder())
 	{
 		RunSpeedThreshold = MaxWalkSpeedCrouched;
 		SprintSpeedThreshold = MaxWalkSpeedCrouched * 1.7f;
@@ -723,7 +769,7 @@ void UPBPlayerMovement::PlayMoveSound(const float DeltaTime)
 
 	// Only play sounds if we are moving fast enough on the ground or on a
 	// ladder
-	const bool bPlaySound = (bBrakingWindowElapsed || bOnLadder) && Speed >= RunSpeedThreshold * RunSpeedThreshold;
+	const bool bPlaySound = (bBrakingWindowElapsed || IsOnLadder()) && Speed >= RunSpeedThreshold * RunSpeedThreshold;
 
 	if (!bPlaySound)
 	{
@@ -736,7 +782,7 @@ void UPBPlayerMovement::PlayMoveSound(const float DeltaTime)
 
 	UPBMoveStepSound* MoveSound = nullptr;
 
-	if (bOnLadder)
+	if (IsOnLadder())
 	{
 		MoveSoundVolume = 0.5f;
 		MoveSoundTime = 450.0f;
@@ -774,11 +820,11 @@ void UPBPlayerMovement::PlayMoveSound(const float DeltaTime)
 	{
 		TArray<USoundCue*> MoveSoundCues;
 
-		if (bSprinting && !bOnLadder)
+		if (bSprinting && !IsOnLadder())
 		{
 			MoveSoundCues = StepSide ? MoveSound->GetSprintLeftSounds() : MoveSound->GetSprintRightSounds();
 		}
-		if (!bSprinting || bOnLadder || MoveSoundCues.Num() < 1)
+		if (!bSprinting || IsOnLadder() || MoveSoundCues.Num() < 1)
 		{
 			MoveSoundCues = StepSide ? MoveSound->GetStepLeftSounds() : MoveSound->GetStepRightSounds();
 		}
@@ -1226,6 +1272,126 @@ void UPBPlayerMovement::PhysFalling(float deltaTime, int32 Iterations)
 	}
 }
 
+void UPBPlayerMovement::PhysCustom(float deltaTime, int32 Iterations)
+{
+	// Redirect custom mode towards the correct submode
+	switch (CustomMovementMode) {
+		case MOVECUSTOM_Ladder: PhysLadder(deltaTime, Iterations); return;
+		default: return;
+	}
+}
+
+void UPBPlayerMovement::PhysLadder(float deltaTime, int32 Iterations)
+{
+	SCOPE_CYCLE_COUNTER(STAT_CharPhysLadder);
+
+	if (deltaTime < MIN_TICK_TIME)
+	{
+		return;
+	}
+
+	if (!LadderData.IsSet())
+	{
+		SetMovementMode(MOVE_Falling);
+		StartNewPhysics(deltaTime, Iterations);
+		return;
+	}
+
+	RestorePreAdditiveRootMotionVelocity();
+
+	Iterations++;
+	FVector OldAcceleration = Acceleration;
+	FVector OldLocation = UpdatedComponent->GetComponentLocation();
+	bJustTeleported = false;
+	if( !HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() )
+	{
+		CalcVelocity(deltaTime, LadderFriction, false, GetMaxBrakingDeceleration());
+	}
+
+	Velocity = FVector::VectorPlaneProject(Velocity, LadderData->Normal);
+
+	ApplyRootMotionToVelocity(deltaTime);
+
+	FVector Adjusted = Velocity * deltaTime;
+	FHitResult Hit(1.f);
+	float remainingTime = deltaTime * ClimbLadder(Adjusted, Hit);
+
+	// may have left the ladder ; if so, set new physics
+	if (!IsOnLadder()) {
+		StartNewPhysics(remainingTime, Iterations);
+		return;
+	}
+
+	// We bumped into something while on the ladder
+	if (Hit.Time < 1.f && CharacterOwner)
+	{
+		//adjust and try again
+		HandleImpact(Hit, deltaTime, Adjusted);
+		SlideAlongSurface(Adjusted, (1.f - Hit.Time), Hit.Normal, Hit, true);	
+		// may have left the ladder after the slide; if so, set falling
+		if (!OverlapsLadder(LadderData.GetValue())) {
+			SetMovementMode(MOVE_Falling);
+			StartNewPhysics(remainingTime, Iterations);
+			return;
+		}
+	}
+
+	// Find floor
+	bool bUseCachedFloor = FVector::PointsAreSame(UpdatedComponent->GetComponentLocation(), OldLocation);
+	FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, bUseCachedFloor, NULL);
+	// If it is walkabke and not the ladder, try to get off the ladder at this position
+	if (CurrentFloor.IsWalkableFloor() && CurrentFloor.HitResult.Component != LadderData->Target)
+	{
+		// We leave the ladder if backwards is pressed
+		if ((CharacterOwner->GetActorForwardVector() | OldAcceleration) < 0.)
+		{
+			// Push away from ladder
+			// Start falling, but do not allow regrabbing
+			bAllowRegrabLadder = false;
+			SetMovementMode(MOVE_Falling);
+			StartNewPhysics(remainingTime, Iterations);
+			return;
+		}
+	}
+
+	// Check if we moved off the ladder
+	if( !HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() && !bJustTeleported && ((deltaTime - remainingTime) > UE_KINDA_SMALL_NUMBER) && CharacterOwner )
+	{
+		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / (deltaTime - remainingTime);
+	}
+}
+
+bool UPBPlayerMovement::OverlapsLadder(const FLadderData& Ladder)
+{
+	if (!Ladder.Target) { return false; }
+	if (!CharacterOwner) { return false; }
+	UCapsuleComponent* CharacterCapsule = CharacterOwner->GetCapsuleComponent();
+	if (!CharacterCapsule) { return false; }
+
+	return Ladder.Target->OverlapComponent(
+		CharacterCapsule->GetComponentLocation(),
+		CharacterCapsule->GetComponentQuat(),
+		CharacterCapsule->GetCollisionShape());
+}
+
+float UPBPlayerMovement::ClimbLadder(FVector Delta, FHitResult& Hit)
+{
+	FVector Start = UpdatedComponent->GetComponentLocation();
+	float airTime = 0.f;
+	SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), true, Hit);
+
+	// If we're not on ladder anymore
+	if (!OverlapsLadder(LadderData.GetValue()))
+	{
+		// Push off ladder ? No need it seems.
+		// Maybe if we go up ? idk
+		// FVector leavingDirection = Delta.GetSafeNormal();
+		// Fall
+		SetMovementMode(MOVE_Falling);
+	}
+	return airTime;
+}
+
 void UPBPlayerMovement::SetPostLandedPhysics(const FHitResult& Hit)
 {
 	// UE-COPY: UCharacterMovementComponent::SetPostLandedPhysics(const FHitResult& Hit)
@@ -1405,33 +1571,31 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 	}
 
 	// Apply friction
-	if (bIsPowerSliding)
+	if (bIsGroundMove && bIsPowerSliding)
 	{
-		// Only brake if we're touching the ground
-		if (bIsGroundMove) {
-			// Apply gravity
-			const FVector Gravity = -GetGravityDirection() * GetGravityZ();
-			Velocity += FVector::VectorPlaneProject(Gravity * DeltaTime, CurrentFloor.HitResult.ImpactNormal);
-
-			// Compute angle with the floor, and scale it from [0, PI/2] to [0-1]
-			const float FloorAngle = FMath::Acos(CurrentFloor.HitResult.ImpactNormal | -GetGravityDirection()) / (PI/2.);
-			const float ActualBrakingFriction = (FMath::Pow(1. - FloorAngle, 2.)) * BrakingFriction * SlidingFrictionMultiplier * SurfaceFriction;
-			const float ActualBrakingDeceleration = BrakingDecelerationSliding;
-			ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, ActualBrakingDeceleration);
-		}
-	}
-	else if (bIsGroundMove)
+		// Apply gravity
+		const FVector Gravity = -GetGravityDirection() * GetGravityZ();
+		Velocity += FVector::VectorPlaneProject(Gravity * DeltaTime, CurrentFloor.HitResult.ImpactNormal);
+		// Compute angle with the floor, and scale it from [0, PI/2] to [0-1]
+		const float FloorAngle = FMath::Acos(CurrentFloor.HitResult.ImpactNormal | -GetGravityDirection()) / (PI / 2.);
+		const float ActualBrakingFriction = (FMath::Pow(1. - FloorAngle, 2.)) * BrakingFriction * SlidingFrictionMultiplier * SurfaceFriction;
+		const float ActualBrakingDeceleration = BrakingDecelerationSliding;
+		ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, ActualBrakingDeceleration);
+	} 
+	else if (bIsGroundMove || IsOnLadder()) 
 	{
 		const bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 		const FVector OldVelocity = Velocity;
-
 		const float ActualBrakingFriction = (bUseSeparateBrakingFriction ? BrakingFriction : Friction) * SurfaceFriction;
 		ApplyVelocityBraking(DeltaTime, ActualBrakingFriction, BrakingDeceleration);
 
 		// Don't allow braking to lower us below max speed if we started above it.
-		if (bVelocityOverMax && Velocity.SizeSquared() < FMath::Square(MaxSpeed) && FVector::DotProduct(Acceleration, OldVelocity) > 0.0f)
-		{
-			Velocity = OldVelocity.GetSafeNormal() * MaxSpeed;
+		// This always applies if we're on the ground, but if we're on a ladder,
+		// then it applies iff bGrabbingLadderBrakesMaxSpeed is false
+		if (!(IsOnLadder() && bGrabbingLadderBrakesMaxSpeed)) {
+			if (bVelocityOverMax && Velocity.SizeSquared() < FMath::Square(MaxSpeed) && FVector::DotProduct(Acceleration, OldVelocity) > 0.0f) {
+				Velocity = OldVelocity.GetSafeNormal() * MaxSpeed;
+			}
 		}
 	}
 
@@ -1503,8 +1667,54 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 		}
 	}
 	// ladder movement
-	else if (bOnLadder)
+	else if (IsOnLadder())
 	{
+		// Apply input acceleration
+		if (!bZeroAcceleration) {
+			// Clamp acceleration to max speed
+			Acceleration = Acceleration.GetClampedToMaxSize2D(MaxSpeed);
+			// Are we looking up or down the ladder ?
+			float dotLimit = FMath::Sin(FMath::DegreesToRadians(LadderDownViewPitch));
+			float dotViewAngle = CharacterOwner->GetControlRotation().Vector() | LadderData->Up;
+			if (bLadderClimbViewHysteresis) {
+				if (!bIsLookingUpLadder.IsSet()) {
+					// Initial state is just like no hysteresis
+					bIsLookingUpLadder = dotViewAngle >= -dotLimit;
+				}
+				else {
+					// Only change if we're going above or under limit
+					if (dotViewAngle <= -dotLimit)	   { bIsLookingUpLadder = false; }
+					else if (dotViewAngle >= dotLimit) { bIsLookingUpLadder = true; }
+				}
+			}			
+			else {
+				// No hysteresis, just do depending on the limit
+				bIsLookingUpLadder = (CharacterOwner->GetControlRotation().Vector() | LadderData->Up) >= -dotLimit;
+			}
+			// Project acceleration to the ladder's coordinate system
+			float accelFwd = (CharacterOwner->GetActorForwardVector() | Acceleration) * (bIsLookingUpLadder.GetValue() ? 1. : -1.);
+			float accelRight = (CharacterOwner->GetActorRightVector() | Acceleration);
+			// Reorient acceleration
+			Acceleration = (LadderData->Up * accelFwd) + (LadderData->Right * accelRight);
+			// If view vector must be taken in account to strafe
+			if (bAllowLadderViewStrafe) {
+				// Project view vector to normal plane of ladder
+				float cosAngle = CharacterOwner->GetControlRotation().Vector() | LadderData->Right;
+				Acceleration = Acceleration.RotateAngleAxisRad(FMath::Asin(cosAngle * bIsLookingUpLadder.GetValue()), LadderData->Normal);
+			}
+			// Find veer
+			const FVector AccelDir = Acceleration.GetSafeNormal();
+			const float Veer = Velocity.X * AccelDir.X + Velocity.Y * AccelDir.Y + Velocity.Z * AccelDir.Z;
+			// Get add speed with air speed cap
+			const float AddSpeed = Acceleration.Size() - Veer;
+			if (AddSpeed > 0.0f) {
+				// Apply acceleration
+				const float AccelerationMultiplier = bIsGroundMove ? GroundAccelerationMultiplier : AirAccelerationMultiplier;
+				FVector CurrentAcceleration = Acceleration * AccelerationMultiplier * SurfaceFriction * DeltaTime;
+				CurrentAcceleration = CurrentAcceleration.GetClampedToMaxSize(AddSpeed);
+				Velocity += CurrentAcceleration;
+			}
+		}
 	}
 	// walk move
 	else
@@ -1546,7 +1756,7 @@ void UPBPlayerMovement::CalcVelocity(float DeltaTime, float Friction, bool bFlui
 	const float SpeedSq = Velocity.SizeSquared2D();
 
 	// Dynamic step height code for allowing sliding on a slope when at a high speed
-	if (bOnLadder || SpeedSq <= MaxWalkSpeedCrouched * MaxWalkSpeedCrouched)
+	if (IsOnLadder() || SpeedSq <= MaxWalkSpeedCrouched * MaxWalkSpeedCrouched)
 	{
 		// If we're crouching or not sliding, just use max
 		MaxStepHeight = DefaultStepHeight;
@@ -1950,7 +2160,7 @@ bool UPBPlayerMovement::CanAttemptJump() const
 	}
 	else if (!IsFalling())
 	{
-		bCanAttemptJump &= bOnLadder;
+		bCanAttemptJump &= IsOnLadder();
 	}
 	return bCanAttemptJump;
 }
@@ -1965,6 +2175,10 @@ float UPBPlayerMovement::GetMaxSpeed() const
 	if (IsSwimming()) 
 	{
 		Speed = MaxSwimSpeed;
+	}
+	else if (IsOnLadder()) 
+	{
+		Speed = LadderSpeed;
 	}
 	else if (IsCrouching() && bCrouchFrameTolerated) 
 	{
@@ -1984,6 +2198,19 @@ float UPBPlayerMovement::GetMaxSpeed() const
 	}
 
 	return Speed;
+}
+
+float UPBPlayerMovement::GetMaxBrakingDeceleration() const
+{
+	// Call parent for non custom mode
+	if (MovementMode != MOVE_Custom) {
+		return Super::GetMaxBrakingDeceleration();
+	}
+	// Custom modes must define their values
+	switch (CustomMovementMode) {
+		case MOVECUSTOM_Ladder: return BrakingDecelerationLadder;
+		default: return 0.f;
+	}
 }
 
 void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos)
@@ -2028,6 +2255,18 @@ void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& D
 	T = FString::Printf(TEXT("%s In physicsvolume %s on base %s component %s gravity %f"), *GetMovementName(), (PhysicsVolume ? *PhysicsVolume->GetName() : TEXT("None")),
 						(BaseActor ? *BaseActor->GetName() : TEXT("None")), (BaseComponent ? *BaseComponent->GetName() : TEXT("None")), GetGravityZ());
 	DisplayDebugManager.DrawString(T);
+}
+
+FString UPBPlayerMovement::GetMovementName() const
+{
+	if (MovementMode == MOVE_Custom) {
+		switch (CustomMovementMode) {
+			case MOVECUSTOM_Ladder:		return TEXT("LadderClimbing");
+			default:					return TEXT("Custom (Unknown)");
+		}
+	}
+
+	return Super::GetMovementName();
 }
 
 void UPBPlayerMovement::PhysicsVolumeChanged(APhysicsVolume* NewVolume)
@@ -2133,5 +2372,44 @@ void UPBPlayerMovement::LeaveDeepWater()
 		JumpOutOfWater(WallNormal);
 		Velocity.Z = jumpNearWall ? OutofWaterZ : WaterJumpVelocity;
 			//set here so physics uses this for remainder of tick
+	}
+}
+
+bool UPBPlayerMovement::GrabLadder(const FLadderData& Ladder)
+{
+	// If we already are grabbing a ladder, do nothing
+	if (IsOnLadder()) {
+		return false;
+	}
+
+	// Reset view direction
+	bIsLookingUpLadder.Reset();
+	// We can grab a ladder
+	// Save data
+	bAllowRegrabLadder = true;
+	RegrabbableLadderData.Reset();
+	LadderData = Ladder;
+	SetMovementMode(MOVE_Custom, MOVECUSTOM_Ladder);
+	// We grabbed a ladder
+	return true;
+}
+
+bool UPBPlayerMovement::IsOnLadder() const
+{
+	return (MovementMode == MOVE_Custom) && (CustomMovementMode == MOVECUSTOM_Ladder) && UpdatedComponent;
+}
+
+FVector UPBPlayerMovement::GetLadderJumpVelocity() const
+{
+	// No ladder, return zero
+	if (!LadderData.IsSet()) { return FVector::ZeroVector; }
+
+	// Return velocity
+	if (bIsLadderJumpAngleBased) {
+		return LadderJumpVelocity * (LadderData->Normal.RotateAngleAxis(LadderJumpAngle, LadderData->Right));
+	}
+	else {
+		return (LadderData->Normal * LadderJumpNormalVelocity)
+			 + (LadderData->Up * LadderJumpUpwardsVelocity);
 	}
 }

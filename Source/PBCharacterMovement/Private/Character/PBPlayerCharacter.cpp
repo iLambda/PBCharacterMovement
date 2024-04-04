@@ -58,6 +58,9 @@ void APBPlayerCharacter::BeginPlay()
 {
 	// Call the base class
 	Super::BeginPlay();
+	// Subscribe to events
+	GetCapsuleComponent()->OnComponentBeginOverlap.AddDynamic(this, &APBPlayerCharacter::HandleBeginOverlap);
+	GetCapsuleComponent()->OnComponentEndOverlap.AddDynamic(this, &APBPlayerCharacter::HandleEndOverlap);
 	// Max jump time to get to the top of the arc
 	MaxJumpTime = -4.0f * GetCharacterMovement()->JumpZVelocity / (3.0f * GetCharacterMovement()->GetGravityZ());
 }
@@ -72,6 +75,34 @@ void APBPlayerCharacter::Tick(float DeltaTime)
 		bDeferJumpStop = false;
 		Super::StopJumping();
 	}
+}
+
+void APBPlayerCharacter::HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	// If not a ladder, skip
+	if (OtherComp->BodyInstance.GetObjectType() != LadderObjectType) {
+		return;
+	}
+
+	// Check if contact normal is along the forward plane of the ladder
+	if (!FMath::IsNearlyEqual(1.0, FMath::Abs(SweepResult.Normal | OtherComp->GetForwardVector()))) {
+		return;
+	}
+
+	// Start being on ladder
+	FLadderData ladder;
+	ladder.Target = OtherComp;
+	ladder.Up = OtherComp->GetUpVector();
+	ladder.Normal = SweepResult.Normal;
+	ladder.Right = ladder.Normal ^ ladder.Up;
+	MovementPtr->GrabLadder(ladder);
+
+	UE_LOG(LogTemp, Warning, L"Ladder : (D: %f, POS: %s)", SweepResult.Distance, *SweepResult.Normal.ToString());
+}
+
+void APBPlayerCharacter::HandleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+
 }
 
 void APBPlayerCharacter::ApplyDamageMomentum(float DamageTaken, FDamageEvent const& DamageEvent, APawn* PawnInstigator, AActor* DamageCauser)

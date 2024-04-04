@@ -90,6 +90,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, meta = (AllowPrivateAccess = "true"), Category = "PB Player|Damage")
 	float CapDamageMomentumZ = 0.f;
 
+	/** The collision channel for ladders */
+	UPROPERTY(EditDefaultsOnly, meta = (AllowPrivateAccess = "true"), Category = "PB Player|Interaction")
+	TEnumAsByte<ECollisionChannel> LadderObjectType;
+
 	/** Pointer to player movement component */
 	UPBPlayerMovement* MovementPtr;
 
@@ -106,6 +110,12 @@ private:
 	bool bAllowCrouch = true;
 
 	virtual void ApplyDamageMomentum(float DamageTaken, FDamageEvent const& DamageEvent, APawn* PawnInstigator, AActor* DamageCauser) override;
+	
+	UFUNCTION()
+	void HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	UFUNCTION()
+	void HandleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
 
 protected:
 	virtual void BeginPlay();

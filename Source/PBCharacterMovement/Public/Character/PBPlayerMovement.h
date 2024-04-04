@@ -29,16 +29,31 @@ enum class EWaterJumpMode : uint8
 };
 ENUM_CLASS_FLAGS(EWaterJumpMode);
 
+struct FLadderData
+{
+	UPrimitiveComponent* Target;
+	FVector Normal;
+	FVector Up;
+	FVector Right;
+};
+
+/** Movement modes for Characters. */
+UENUM(BlueprintType)
+enum ECustomMovementMode : int
+{
+	/** None (custom movement is undefined). */
+	MOVECUSTOM_None		UMETA(DisplayName = "None"),
+	/** Climbing on a ladder. */
+	MOVECUSTOM_Ladder		UMETA(DisplayName = "Ladder"),
+};
+
+
 UCLASS()
 class PBCHARACTERMOVEMENT_API UPBPlayerMovement : public UCharacterMovementComponent
 {
 	GENERATED_BODY()
 
 protected:
-	/** If the player is using a ladder */
-	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Gameplay)
-	bool bOnLadder;
-
 	/** Milliseconds between step sounds */
 	float MoveSoundTime;
 
@@ -108,10 +123,6 @@ protected:
 	UPROPERTY(Category = "Character Movement: Walking", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0"))
 	float WalkSpeed;
 
-	/** Speed on a ladder */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder")
-	float LadderSpeed;
-
 	/** The minimum speed to scale up from for slope movement  */
 	UPROPERTY(Category = "Character Movement: Walking", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0"))
 	float SpeedMultMin;
@@ -173,7 +184,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
 	float SlidingSpeedBoost = 200.f;
 
-	/** The multiplier the floor friction when we're sliding. */
+	/** The multiplier for the floor friction when we're sliding. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
 	float SlidingFrictionMultiplier = .25f;
 
@@ -192,6 +203,59 @@ protected:
 	/** Only allow powerslides if we're going forward. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Sliding")
 	bool bOnlyForwardPowerslides = true;
+
+	/** The target ground speed when walking on ladders. */
+	UPROPERTY(Category = "Character Movement: Ladder Climbing", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0"))
+	float LadderSpeed;
+
+	/** Deceleration when on a ladder and not applying acceleration. */
+	UPROPERTY(Category = "Character Movement: Ladder Climbing", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0"))
+	float BrakingDecelerationLadder;
+
+	/** The ladder friction when we're on one. */
+	UPROPERTY(Category = "Character Movement: Ladder Climbing", EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0", UIMin = "0"))
+	float LadderFriction = 5.f;
+
+	/** The angle under the horizon the view needs to be for the ladder movement to be considered going down */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (Units = "Degrees", ClampMin = "0", ClampMax = "90", UIMin = "0", UIMax = "90"))
+	float LadderDownViewPitch = 15.0f;
+
+	/** Is the view pitch used to determine if going up/down having hysteresis behavior ? */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing")
+	bool bLadderClimbViewHysteresis = true;
+
+	/** Allows the character view vector to contribute to strafing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing")
+	bool bAllowLadderViewStrafe = false;
+
+	/** How long do we wait to potentially re-grab the ladder we were on, if we slipped? Set zero to disable. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (Units = "Milliseconds"))
+	float GrabSameLadderCooldown = 1000.f;
+
+	/** Is the ladder jump velocity angle or component based ? */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing")
+	bool bIsLadderJumpAngleBased = false;
+
+	/** The velocity we get from jumping from a ladder (angle based) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (EditCondition = "bIsLadderJumpAngleBased"))
+	float LadderJumpVelocity = 305.f;
+	
+	/** The angle of the velocity we get from jumping from a ladder (angle based) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (EditCondition = "bIsLadderJumpAngleBased", Units = "Degrees", ClampMin = "-90", ClampMax = "90", UIMin = "-90", UIMax = "90"))
+	float LadderJumpAngle = 45;
+
+	/** The normal velocity we get from jumping from a ladder */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (EditCondition = "!bIsLadderJumpAngleBased"))
+	float LadderJumpNormalVelocity = 280.f;
+
+	/** The upwards velocity we get from jumping from a ladder */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing", meta = (EditCondition = "!bIsLadderJumpAngleBased"))
+	float LadderJumpUpwardsVelocity = 280.f;
+
+	/** Does grabbing a ladder allow braking to lower us below max speed if we started above it ?
+	Set to true if you want player to be able to break their speed by grabbing ladders. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Ladder Climbing")
+	bool bGrabbingLadderBrakesMaxSpeed = true;
 
 public:
 	/** Print pos and vel (Source: cl_showpos) */
@@ -248,10 +312,7 @@ public:
 
 	/** Is this player on a ladder? */
 	UFUNCTION(BlueprintCallable, Category = Gameplay)
-	bool IsOnLadder() const
-	{
-		return bOnLadder;
-	}
+	bool IsOnLadder() const;
 
 	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode);
 
@@ -269,6 +330,7 @@ public:
 	}
 
 	virtual float GetMaxSpeed() const override;
+	virtual float GetMaxBrakingDeceleration() const override;
 
 	bool IsWaterJumpAllowed(const EWaterJumpMode& Mode) const
 	{
@@ -280,6 +342,8 @@ public:
 		return IsCrouching() || (bIsInCrouchTransition && bWantsToCrouch);
 	}
 
+	FVector GetLadderJumpVelocity() const;
+
 protected:
 	virtual void PhysicsVolumeChanged(class APhysicsVolume* NewVolume) override;
 	virtual bool IsInWater() const override;
@@ -290,7 +354,9 @@ protected:
 	virtual void LeaveDeepWater();
 
 	virtual void DisplayDebug(class UCanvas* Canvas, const FDebugDisplayInfo& DebugDisplay, float& YL, float& YPos) override;
+	virtual FString GetMovementName() const;
 	virtual void SetPostLandedPhysics(const FHitResult& Hit) override;
+	virtual void PhysCustom(float deltaTime, int32 Iterations) override;
 
 	bool bIsPowerSliding = false;
 	float PowerSlidingTimeElapsed = INFINITY;
@@ -298,6 +364,19 @@ protected:
 	virtual void EndPowerSlide();
 	virtual bool MustStopPowerSlide() const;
 	virtual bool CanPowerSlide() const;
+
+	TOptional<FLadderData> LadderData;
+	TOptional<FLadderData> RegrabbableLadderData;
+	TOptional<bool> bIsLookingUpLadder;
+	bool bAllowRegrabLadder;
+	bool bForceLeaveLadder;
+	float LadderRegrabTimeElapsed = INFINITY;
+	virtual void PhysLadder(float deltaTime, int32 Iterations);
+	virtual float ClimbLadder(FVector Delta, FHitResult& Hit);
+	bool OverlapsLadder(const FLadderData& Ladder);
+	
+public:
+	virtual bool GrabLadder(const FLadderData& Ladder);
 
 private:
 	/** Plays sound effect according to movement and surface */

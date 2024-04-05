@@ -7,6 +7,7 @@ All of the added mechanics are similar to some of other Source Engine based game
 
 
 A non-exhaustive list of such improvements:
+* [Coyote time](https://kidscancode.org/godot_recipes/4.x/2d/coyote_time/index.html)
 * Swimming
 * Powersliding (based on Apex Legends sliding mechanics)
 * Ladder climbing (based on Half Life 1 ladder physics)

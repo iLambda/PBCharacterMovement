@@ -96,6 +96,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Jumping / Falling", meta=(DisplayName="Rejump Window", ForceUnits="ms"))
 	float BrakingWindow;
 
+	/* The vector differential magnitude cap when in air. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Jumping / Falling", meta=(ForceUnits="ms"))
+	float CoyoteTime = 200.f;
+
 	/* Progress checked against the Braking Window, incremented in millis. */
 	float BrakingWindowTimeElapsed;
 
@@ -342,6 +346,11 @@ public:
 		return IsCrouching() || (bIsInCrouchTransition && bWantsToCrouch);
 	}
 
+	bool IsInCoyoteTime() const
+	{
+		return CoyoteTimeElapsed <= CoyoteTime;
+	}
+
 	FVector GetLadderJumpVelocity() const;
 
 protected:
@@ -390,6 +399,7 @@ private:
 	float DefaultStepHeight;
 	float DefaultWalkableFloorZ;
 	float SurfaceFriction;
+	float CoyoteTimeElapsed = INFINITY;
 
 	TOptional<float> CachedImmersionDepth;
 

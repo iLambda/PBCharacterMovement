@@ -210,6 +210,14 @@ void UPBPlayerMovement::TickComponent(float DeltaTime, enum ELevelTick TickType,
 		LadderRegrabTimeElapsed = 0.;
 	}
 
+	// Increment coyote time window
+	if (IsFalling() && !FMath::IsNearlyZero(CoyoteTime) && !isinf(CoyoteTimeElapsed) && IsInCoyoteTime()) {
+		CoyoteTimeElapsed += DeltaTime * 1000;
+	}
+	else {
+		CoyoteTimeElapsed = INFINITY;
+	}
+
 	// Skip player movement when we're simulating physics (ie ragdoll)
 	if (UpdatedComponent->IsSimulatingPhysics())
 	{
@@ -501,6 +509,9 @@ void UPBPlayerMovement::OnMovementModeChanged(EMovementMode PreviousMovementMode
 	if (PreviousMovementMode == MOVE_Walking && MovementMode == MOVE_Falling)
 	{
 		bJumped = true;
+
+		// Reset coyote time window
+		CoyoteTimeElapsed = 0.0f;
 	}
 
 	if (PreviousMovementMode == MOVE_Custom && PreviousCustomMode == MOVECUSTOM_Ladder) 
@@ -2160,7 +2171,11 @@ bool UPBPlayerMovement::CanAttemptJump() const
 		const float WalkableFloor = GetWalkableFloorZ();
 		bCanAttemptJump &= (FloorZ >= WalkableFloor) || FMath::IsNearlyEqual(FloorZ, WalkableFloor);
 	}
-	else if (!IsFalling())
+	else if (IsFalling())
+	{
+		bCanAttemptJump &= IsInCoyoteTime();
+	}
+	else
 	{
 		bCanAttemptJump &= IsOnLadder();
 	}
@@ -2238,6 +2253,13 @@ void UPBPlayerMovement::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& D
 	DisplayDebugManager.DrawString(T);
 
 	T = FString::Printf(TEXT("bForceMaxAccel: %i"), bForceMaxAccel);
+	DisplayDebugManager.DrawString(T);
+
+	T = isinf(CoyoteTimeElapsed) ? L"+INF" : FString::Printf(L"%.1f ms", CoyoteTimeElapsed);
+	T = FString::Printf(TEXT("Coyote Time: %s (%s)"), IsInCoyoteTime() ? L"Yes" : L"No", * T);
+	DisplayDebugManager.DrawString(T);
+
+	T = FString::Printf(TEXT("JumpCurrentCount: %d"), CharacterOwner->JumpCurrentCount);
 	DisplayDebugManager.DrawString(T);
 
 	T = FString::Printf(TEXT("Acceleration: %s"), *Acceleration.ToCompactString());

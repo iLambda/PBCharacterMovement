@@ -230,4 +230,5 @@ public:
 	void Disallow(EPBPlayerMovementAction tech);
 
 	virtual bool CanCrouch() const override;
+	virtual void CheckJumpInput(float DeltaTime) override;
 };

@@ -296,18 +296,49 @@ void APBPlayerCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfH
 }
 #endif
 
+
+void APBPlayerCharacter::CheckJumpInput(float DeltaTime)
+{
+	JumpCurrentCountPreJump = JumpCurrentCount;
+
+	if (MovementPtr) {
+		if (bPressedJump) {
+			// If this is the first jump and we're already falling,
+			// then increment the JumpCount to compensate.
+			// If we're in coyote time, do not increment ; we're in the grace period
+			// where we should still be allowed to jump.
+			const bool bFirstJump = JumpCurrentCount == 0;
+			if (bFirstJump && MovementPtr->IsFalling() && !MovementPtr->IsInCoyoteTime()) {
+				JumpCurrentCount++;
+			}
+
+			const bool bDidJump = CanJump() && MovementPtr->DoJump(bClientUpdating);
+			if (bDidJump) {
+				// Transition from not (actively) jumping to jumping.
+				if (!bWasJumping) {
+					JumpCurrentCount++;
+					JumpForceTimeRemaining = GetJumpMaxHoldTime();
+					OnJumped();
+				}
+			}
+
+			bWasJumping = bDidJump;
+		}
+	}
+}
+
+
 bool APBPlayerCharacter::CanJumpInternal_Implementation() const
 {
 	// UE-COPY: ACharacter::CanJumpInternal_Implementation()
-	auto movement = GetCharacterMovement();
-	bool bCanJump = movement && movement->IsJumpAllowed() && movement->CanAttemptJump();
+	bool bCanJump = MovementPtr && MovementPtr->IsJumpAllowed() && MovementPtr->CanAttemptJump();
 
 	if (bCanJump)
 	{
 		// Ensure JumpHoldTime and JumpCount are valid.
 		if (!bWasJumping || GetJumpMaxHoldTime() <= 0.0f)
 		{
-			if (JumpCurrentCount == 0 && GetCharacterMovement()->IsFalling())
+			if (JumpCurrentCount == 0 && MovementPtr->IsFalling() && !MovementPtr->IsInCoyoteTime())
 			{
 				bCanJump = JumpCurrentCount + 1 < JumpMaxCount;
 			}
@@ -319,17 +350,17 @@ bool APBPlayerCharacter::CanJumpInternal_Implementation() const
 		else
 		{
 			// Only consider JumpKeyHoldTime as long as:
-			// A) We are on the ground
+			// A) We are on the ground or in coyote time
 			// B) The jump limit hasn't been met OR
 			// C) The jump limit has been met AND we were already jumping
 			const bool bJumpKeyHeld = (bPressedJump && JumpKeyHoldTime < GetJumpMaxHoldTime());
 			bCanJump = bJumpKeyHeld &&
-					   (GetCharacterMovement()->IsMovingOnGround() || (JumpCurrentCount < JumpMaxCount) || (bWasJumping && JumpCurrentCount == JumpMaxCount));
+					   (MovementPtr->IsMovingOnGround() || MovementPtr->IsInCoyoteTime() || (JumpCurrentCount < JumpMaxCount) || (bWasJumping && JumpCurrentCount == JumpMaxCount));
 		}
-		if (GetCharacterMovement()->IsMovingOnGround())
+		if (MovementPtr->IsMovingOnGround())
 		{
-			float FloorZ = FVector(0.0f, 0.0f, 1.0f) | GetCharacterMovement()->CurrentFloor.HitResult.ImpactNormal;
-			float WalkableFloor = GetCharacterMovement()->GetWalkableFloorZ();
+			float FloorZ = FVector(0.0f, 0.0f, 1.0f) | MovementPtr->CurrentFloor.HitResult.ImpactNormal;
+			float WalkableFloor = MovementPtr->GetWalkableFloorZ();
 			bCanJump &= (FloorZ >= WalkableFloor || FMath::IsNearlyEqual(FloorZ, WalkableFloor));
 		}
 	}

@@ -15,7 +15,8 @@ A non-exhaustive list of such improvements:
 * **[To be implemented]** Mantling (idem)
 
 The aforementioned mechanics are not supposed to be a 1:1 replica of the Source games they come from, but instead a good approximation of these movement mechanics, with basic movement tech being able to be replicated, such as:
-* Lurching
+* Ladder fall damage cancel
+* Slide hopping
 * Slide jumping
 * ... and others
 

@@ -96,8 +96,6 @@ void APBPlayerCharacter::HandleBeginOverlap(UPrimitiveComponent* OverlappedCompo
 	ladder.Normal = SweepResult.Normal;
 	ladder.Right = ladder.Normal ^ ladder.Up;
 	MovementPtr->GrabLadder(ladder);
-
-	UE_LOG(LogTemp, Warning, L"Ladder : (D: %f, POS: %s)", SweepResult.Distance, *SweepResult.Normal.ToString());
 }
 
 void APBPlayerCharacter::HandleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)

@@ -348,7 +348,7 @@ public:
 
 	bool IsInCoyoteTime() const
 	{
-		return CoyoteTimeElapsed <= CoyoteTime;
+		return !FMath::IsNearlyZero(CoyoteTime) && CoyoteTimeElapsed <= CoyoteTime;
 	}
 
 	FVector GetLadderJumpVelocity() const;
